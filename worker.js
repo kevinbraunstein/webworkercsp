@@ -2,7 +2,7 @@
 onmessage = function(event) {
     if (event.data === 'start') {
       try {
-        const f = new Function('console.log("This will cause an EvalError");');
+        const f = new Function('console.log("Message from worker Function call.");');
         f();
       } catch (error) {
         console.error(error);

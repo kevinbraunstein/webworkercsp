@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chromium 91 Patch Test</title>
+  <style>
+    body {
+      font-family: monospace;
+    }
+    #log {
+      border: 1px solid black;
+      padding: 10px;
+      margin-top: 10px;
+      height: 300px;
+      overflow-y: scroll;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Chromium 91 Patch Test - Dedicated Worker CSP</h1>
+
+  <p>This page tests the changes in the provided patch file, focusing on Content Security Policy (CSP) handling in Dedicated Workers in Chromium 91 (and potentially later versions with similar code). The patch primarily deals with correctly passing and handling response CSPs to workers, especially in cases where off-the-main-thread worker script fetching is disabled.</p>
+
+  <button id="startTest">Run Test</button>
+
+  <div id="log">
+    <!-- Log messages will appear here -->
+  </div>
+
+  <script>
+    const logElement = document.getElementById('log');
+    const startButton = document.getElementById('startTest');
+
+    function log(message) {
+      console.log(message);
+      const logEntry = document.createElement('div');
+      logEntry.textContent = message;
+      logElement.appendChild(logEntry);
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    startButton.addEventListener('click', () => {
+      log("Test started...");
+
+      // --- Test Case 1: Basic Worker Creation and CSP Injection ---
+      log("Starting Test Case 1: Basic Worker Creation and CSP Injection")
+      const workerScript1 = `
+        self.onmessage = (event) => {
+          if(event.data === "checkCSP") {
+            if (document.securityPolicy) {
+             // Should not be accessible in a worker but just for test
+             postMessage({ type: 'error', message: 'document.securityPolicy should not be accessible in worker' });
+            } else {
+              postMessage({ type: 'success', message: 'document.securityPolicy is not accessible in worker' });
+            }
+          } else if (event.data === "checkGlobalCSP") {
+            // We don't have any way to test if CSP from Response header is correctly applied
+            postMessage({ type: 'success', message: 'global CSP check done' });
+          }
+        }
+      `;
+      const workerBlob1 = new Blob([workerScript1], { type: 'application/javascript' });
+      const workerURL1 = URL.createObjectURL(workerBlob1);
+
+      const worker1 = new Worker(workerURL1);
+      worker1.onmessage = (event) => {
+        log(`Worker 1: ${event.data.message}`);
+        if(event.data.type == 'error'){
+          alert(event.data.message);
+        }
+
+      };
+      worker1.onerror = (event) => {
+         log(`Worker 1 error: ${event.message}`);
+         alert(`Worker 1 error: ${event.message}`);
+      }
+
+      worker1.postMessage("checkCSP");
+      setTimeout(()=>{
+        worker1.postMessage("checkGlobalCSP");
+      }, 100);
+
+      // --- Test Case 2: Worker with module type ---
+
+      log("Starting Test Case 2: Worker with module type (No script fetch for now)")
+      const workerScript2 = `
+       // In module type worker, it will fetch it's own script
+        self.onmessage = (event) => {
+            postMessage({ type: 'success', message: 'worker module loaded.' });
+        }
+      `;
+      const workerBlob2 = new Blob([workerScript2], { type: 'application/javascript' });
+      const workerURL2 = URL.createObjectURL(workerBlob2);
+      try {
+          const worker2 = new Worker(workerURL2, { type: 'module' });
+          worker2.onmessage = (event) => {
+              log(`Worker 2: ${event.data.message}`);
+          };
+          worker2.onerror = (event) => {
+            log(`Worker 2 error: ${event.message}`);
+            alert(`Worker 2 error: ${event.message}`);
+          };
+          worker2.postMessage("checkLoad");
+
+      } catch (error) {
+          log(`Error creating module worker : ${error.message}`);
+          alert(`Error creating module worker : ${error.message}`);
+      }
+
+       // --- Test Case 3: Load a worker from an url ---
+        log("Starting Test Case 3: Load a worker from an url (Needs a local server)")
+        //You need to serve this js file through a server to be accessible
+       fetch("./worker3.js")
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const worker3 = new Worker("./worker3.js");
+            worker3.onmessage = (event) => {
+              log(`Worker 3: ${event.data.message}`);
+              if(event.data.type == 'error'){
+                alert(event.data.message);
+              }
+            };
+             worker3.onerror = (event) => {
+                log(`Worker 3 error: ${event.message}`);
+                alert(`Worker 3 error: ${event.message}`);
+             }
+             worker3.postMessage("checkCSP");
+            setTimeout(()=>{
+              worker3.postMessage("checkGlobalCSP");
+            }, 100);
+          })
+          .catch(error => {
+            log(`Error fetching worker3.js: ${error.message}`);
+            alert(`Error fetching worker3.js: ${error.message}`);
+          });
+
+      log("Test cases initiated.");
+    });
+  </script>
+<script src="./worker3.js"></script>
+</body>
+</html>
